@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <numeric>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -90,9 +91,22 @@ public:
 	// and the unit normal N
 	bool intersect(const Ray& ray, Vector& P, double &t, Vector& N) const {
 		 // TODO (lab 1) : compute the intersection (just true/false at the begining of lab 1, then P, t and N as well)
-		return false;
+		double first = dot(ray.u, ray.O - C)*dot(ray.u, ray.O - C);
+		double second = dot(ray.O - C, ray.O - C)-(R*R);
+		double delta = first - second;
+		if (delta>=0){
+			double t1 = dot(ray.u, C-ray.O)+sqrt(delta);
+			double t2 = dot(ray.u, C-ray.O)-sqrt(delta);
+			t = fmin(t1, t2);
+			P = ray.O + t * ray.u;
+			N = P-C;
+			N.normalize();
+			return true ;
+		}
+		return false ;
+	
 	}
-
+		
 	double R;
 	Vector C;
 };
@@ -136,6 +150,7 @@ public:
 
 		if (recursion_depth >= max_light_bounce) return Vector(0, 0, 0);
 
+
 		// TODO (lab 1) : if intersect with ray, use the returned information to compute the color ; otherwise black 
 		// in lab 1, the color only includes direct lighting with shadows
 
@@ -145,6 +160,7 @@ public:
 		if (intersect(ray, P, t, N, object_id)) {
 
 			if (objects[object_id]->mirror) {
+				//return getColor(, int recursion_depth+1)
 
 				// return getColor in the reflected direction, with recursion_depth+1 (recursively)
 			} // else
@@ -153,12 +169,28 @@ public:
 
 				// return getColor in the refraction direction, with recursion_depth+1 (recursively)
 			} // else
-
+	
 			// test if there is a shadow by sending a new ray
 			// if there is no shadow, compute the formula with dot products etc.
-
-
 			// TODO (lab 2) : add indirect lighting component with a recursive call
+
+			Vector to_light = light_position - P;
+        	double d2 = to_light.norm2();
+        	double d = sqrt(d2);
+        	to_light = to_light / d;
+
+        	Ray shadow_ray(P + 1e-4 * N, to_light);
+
+        	Vector P_shadow, N_shadow;
+        	double t_shadow;
+        	int shadow_object_id;
+
+        	if (!intersect(shadow_ray, P_shadow, t_shadow, N_shadow, shadow_object_id) || t_shadow > d) {
+            	double cosine = std::max(0.0, dot(N, to_light));
+            	return (light_intensity / (4.0 * M_PI * d2)) * (objects[object_id]->albedo / M_PI) * cosine;
+        	}
+
+        	return Vector(0, 0, 0);
 		}
 
 		
@@ -217,8 +249,7 @@ int main() {
 			Vector color;
 
 			// TODO (lab 1) : correct ray_direction so that it goes through each pixel (j, i)			
-			Vector ray_direction(0., 0., -1);
-
+			Vector ray_direction(j-(W/2)+0.5, (H/2)-i-0.5, -W/(2*tan(scene.fov/2)));
 			Ray ray(scene.camera_center, ray_direction);
 
 			// TODO (lab 2) : add Monte Carlo / averaging of random ray contributions here

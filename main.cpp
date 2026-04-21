@@ -2,7 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
-#include <numeric>
+
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -89,28 +89,35 @@ public:
 	// if there is an intersection, also computes the point of intersection P, 
 	// t>=0 the distance between the ray origin and P (i.e., the parameter along the ray)
 	// and the unit normal N
-	bool intersect(const Ray& ray, Vector& P, double &t, Vector& N) const {
-		 // TODO (lab 1) : compute the intersection (just true/false at the begining of lab 1, then P, t and N as well)
-		double first = dot(ray.u, ray.O - C)*dot(ray.u, ray.O - C);
-		double second = dot(ray.O - C, ray.O - C)-(R*R);
-		double delta = first - second;
-		if (delta>=0){
-			double t1 = dot(ray.u, C-ray.O)+sqrt(delta);
-			double t2 = dot(ray.u, C-ray.O)-sqrt(delta);
-			t = fmin(t1, t2);
-			P = ray.O + t * ray.u;
-			N = P-C;
-			N.normalize();
-			return true ;
-		}
-		return false ;
-	
-	}
+	   // returns true iif there is an intersection between the ray and the sphere
+   // if there is an intersection, also computes the point of intersection P,
+   // t>=0 the distance between the ray origin and P (i.e., the parameter along the ray)
+   // and the unit normal N
+   	bool intersect(const Ray& ray, Vector& P, double &t, Vector& N) const {
+        // TODO (lab 1) : compute the intersection (just true/false at the begining of lab 1, then P, t and N as well)
+       	double b = dot(ray.u, ray.O - C);
+       	double delta = sqr(b) - (dot(ray.O - C, ray.O - C) - R*R);
+       	if (delta < 0) return false;
+       	double t2 = -b - sqrt(delta);
+       	double t1 = -b + sqrt(delta);
+       	if (t2 > 0) {
+           	t = t2;
+       	} else if (t1 > 0) {
+           	t = t1;
+       	} else {
+           	return false;
+       	}
+       	P = ray.O + t * ray.u;
+       	N = P - C;
+       	N.normalize();
+       	return true;
+   	}
 		
 	double R;
 	Vector C;
 };
 
+Sphere center_sphere(Vector(0, 0, -55), 10., Vector(0.8, 0.8, 0.8));
 
 // I will provide you with an obj mesh loader (labs 3 and 4)
 class TriangleMesh : public Object {
@@ -140,9 +147,24 @@ public:
 
 		// TODO (lab 1): iterate through the objects and check the intersections with all of them, 
 		// and keep the closest intersection, i.e., the one if smallest positive value of t
-
-		return false;
+		bool has_intersection = false;
+		t = 1e20;
+		for (int i = 0; i < objects.size(); i++) {
+			Vector Ptemp, Ntemp;
+			double ttemp;
+			if (objects[i]->intersect(ray, Ptemp, ttemp, Ntemp)) {
+				if (ttemp < t) {
+					has_intersection = true;
+					t = ttemp;
+					P = Ptemp;
+					N = Ntemp;
+					object_id = i;
+				}
+			}
+		}
+		return has_intersection;
 	}
+		
 
 
 	// return the radiance (color) along ray
@@ -172,29 +194,40 @@ public:
 	
 			// test if there is a shadow by sending a new ray
 			// if there is no shadow, compute the formula with dot products etc.
-			// TODO (lab 2) : add indirect lighting component with a recursive call
+
 
 			Vector to_light = light_position - P;
-        	double d2 = to_light.norm2();
-        	double d = sqrt(d2);
-        	to_light = to_light / d;
+			double dist_to_light = to_light.norm();
+			to_light.normalize();
 
-        	Ray shadow_ray(P + 1e-4 * N, to_light);
+			// shadow ray (slightly offset to avoid self-intersection)
+			const double eps = 1e-4;
+			Ray shadow_ray(P + eps * N, to_light);
 
-        	Vector P_shadow, N_shadow;
-        	double t_shadow;
-        	int shadow_object_id;
+			Vector P_shadow, N_shadow;
+			double t_shadow;
+			int shadow_id;
 
-        	if (!intersect(shadow_ray, P_shadow, t_shadow, N_shadow, shadow_object_id) || t_shadow > d) {
-            	double cosine = std::max(0.0, dot(N, to_light));
-            	return (light_intensity / (4.0 * M_PI * d2)) * (objects[object_id]->albedo / M_PI) * cosine;
-        	}
+			bool in_shadow = false;
 
-        	return Vector(0, 0, 0);
-		}
+			if (intersect(shadow_ray, P_shadow, t_shadow, N_shadow, shadow_id)) {
+				if (t_shadow < dist_to_light) {
+					in_shadow = true;
+				}
+			}
+
+			if (in_shadow) {
+				return Vector(0, 0, 0);
+			}
 
 		
-
+			double cos_theta = std::max(0.0, dot(N, to_light));
+			double intensity = light_intensity / (4.0 * M_PI * dist_to_light * dist_to_light);
+			Vector color = objects[object_id]->albedo * (intensity * cos_theta / M_PI);
+			return color;
+			// TODO (lab 2) : add indirect lighting component with a recursive call
+        	return Vector(0, 0, 0);
+		}
 		return Vector(0, 0, 0);
 	}
 
@@ -214,7 +247,10 @@ int main() {
 		engine[i].seed(i);
 	}
 
+
 	Sphere center_sphere(Vector(0, 0, 0), 10., Vector(0.8, 0.8, 0.8));
+
+	
 	Sphere wall_left(Vector(-1000, 0, 0), 940, Vector(0.5, 0.8, 0.1));
 	Sphere wall_right(Vector(1000, 0, 0), 940, Vector(0.9, 0.2, 0.3));
 	Sphere wall_front(Vector(0, 0, -1000), 940, Vector(0.1, 0.6, 0.7));
@@ -223,23 +259,23 @@ int main() {
 	Sphere floor(Vector(0, -1000, 0), 990, Vector(0.6, 0.5, 0.7));
 
 	Scene scene;
-	scene.camera_center = Vector(0, 0, 0);
+	scene.camera_center = Vector(0, 0, 55);
 	scene.light_position = Vector(-10,20,40);
 	scene.light_intensity = 3E7;
 	scene.fov = 60 * M_PI / 180.;
-	scene.gamma = 1.0;    // TODO (lab 1) : play with gamma ; typically, gamma = 2.2
+	scene.gamma = 2.2;    // TODO (lab 1) : play with gamma ; typically, gamma = 2.2
 	scene.max_light_bounce = 5;
 
 	scene.addObject(&center_sphere);
 
-	/*
+	
 	scene.addObject(&wall_left);
 	scene.addObject(&wall_right);
 	scene.addObject(&wall_front);
 	scene.addObject(&wall_behind);
 	scene.addObject(&ceiling);
 	scene.addObject(&floor);
-	*/
+	
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 
@@ -250,6 +286,7 @@ int main() {
 
 			// TODO (lab 1) : correct ray_direction so that it goes through each pixel (j, i)			
 			Vector ray_direction(j-(W/2)+0.5, (H/2)-i-0.5, -W/(2*tan(scene.fov/2)));
+			ray_direction.normalize();
 			Ray ray(scene.camera_center, ray_direction);
 
 			// TODO (lab 2) : add Monte Carlo / averaging of random ray contributions here

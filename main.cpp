@@ -2,6 +2,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include <omp.h>
 
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -168,68 +169,137 @@ public:
 
 
 	// return the radiance (color) along ray
-	Vector getColor(const Ray& ray, int recursion_depth) {
-
-		if (recursion_depth >= max_light_bounce) return Vector(0, 0, 0);
+Vector getColor(const Ray& ray, int recursion_depth) {
 
 
-		// TODO (lab 1) : if intersect with ray, use the returned information to compute the color ; otherwise black 
-		// in lab 1, the color only includes direct lighting with shadows
-
-		Vector P, N;
-		double t;
-		int object_id;
-		if (intersect(ray, P, t, N, object_id)) {
-
-			if (objects[object_id]->mirror) {
-				//return getColor(, int recursion_depth+1)
-
-				// return getColor in the reflected direction, with recursion_depth+1 (recursively)
-			} // else
-
-			if (objects[object_id]->transparent) { // optional
-
-				// return getColor in the refraction direction, with recursion_depth+1 (recursively)
-			} // else
-	
-			// test if there is a shadow by sending a new ray
-			// if there is no shadow, compute the formula with dot products etc.
 
 
-			Vector to_light = light_position - P;
-			double dist_to_light = to_light.norm();
-			to_light.normalize();
 
-			// shadow ray (slightly offset to avoid self-intersection)
-			const double eps = 1e-4;
-			Ray shadow_ray(P + eps * N, to_light);
 
-			Vector P_shadow, N_shadow;
-			double t_shadow;
-			int shadow_id;
 
-			bool in_shadow = false;
 
-			if (intersect(shadow_ray, P_shadow, t_shadow, N_shadow, shadow_id)) {
-				if (t_shadow < dist_to_light) {
-					in_shadow = true;
-				}
-			}
+    if (recursion_depth >= max_light_bounce) return Vector(0, 0, 0);
 
-			if (in_shadow) {
-				return Vector(0, 0, 0);
-			}
 
-		
-			double cos_theta = std::max(0.0, dot(N, to_light));
-			double intensity = light_intensity / (4.0 * M_PI * dist_to_light * dist_to_light);
-			Vector color = objects[object_id]->albedo * (intensity * cos_theta / M_PI);
-			return color;
-			// TODO (lab 2) : add indirect lighting component with a recursive call
-        	return Vector(0, 0, 0);
-		}
-		return Vector(0, 0, 0);
-	}
+
+
+
+
+
+
+    // TODO (lab 1) : if intersect with ray, use the returned information to compute the color ; otherwise black
+    // in lab 1, the color only includes direct lighting with shadows
+    Vector P, N;
+    double t;
+    int object_id;
+    if (intersect(ray, P, t, N, object_id)) {
+
+
+
+
+
+
+
+
+        if (objects[object_id]->mirror) {
+
+
+
+
+
+
+
+
+             // return getColor in the reflected direction, with recursion_depth+1 (recursively)
+        } // else
+
+
+
+
+
+
+
+
+        if (objects[object_id]->transparent) { // optional
+
+
+
+
+
+
+
+
+             // return getColor in the refraction direction, with recursion_depth+1 (recursively)
+        } // else
+
+
+         // test if there is a shadow by sending a new ray
+         // if there is no shadow, compute the formula with dot products etc.
+        Vector light_to_vector = light_position - P;
+        Vector light_direction = light_to_vector / light_to_vector.norm();
+        Ray shadow_ray(P + 1e-6 * N, light_direction);
+        Vector shadow_P, shadow_N;
+        double shadow_t;
+        int shadow_id;
+
+
+        Vector direct(0, 0, 0);
+        if (intersect(shadow_ray, shadow_P, shadow_t, shadow_N, shadow_id)) {
+            if (shadow_t < light_to_vector.norm() - 1e-6) {
+                direct = Vector(0, 0, 0);
+            } else {
+                double attenuation = light_intensity / (4 * M_PI * light_to_vector.norm2());
+                Vector material_color = objects[object_id]->albedo / M_PI;
+                double solid_angle = std::max(0., dot(N, light_direction));
+                direct = attenuation * material_color * solid_angle;
+            }
+        } else {
+            double attenuation = light_intensity / (4 * M_PI * light_to_vector.norm2());
+            Vector material_color = objects[object_id]->albedo / M_PI;
+            double solid_angle = std::max(0., dot(N, light_direction));
+            direct = attenuation * material_color * solid_angle;
+        }
+
+
+         // TODO (lab 2) : add indirect lighting component with a recursive call
+        int tid = omp_get_thread_num();
+        double r1 = uniform(engine[tid]);
+        double r2 = uniform(engine[tid]);
+
+        Vector u_dir;
+        if (fabs(N[0]) <= fabs(N[1]) && fabs(N[0]) <= fabs(N[2]))
+            u_dir = cross(N, Vector(1, 0, 0));
+        else if (fabs(N[1]) <= fabs(N[2]))
+            u_dir = cross(N, Vector(0, 1, 0));
+        else
+            u_dir = cross(N, Vector(0, 0, 1));
+        u_dir.normalize();
+        Vector v_dir = cross(N, u_dir);
+
+        double cos_t = sqrt(1 - r2);
+        double sin_t = sqrt(r2);
+        double phi = 2 * M_PI * r1;
+        Vector indirect_dir = sin_t * cos(phi) * u_dir + sin_t * sin(phi) * v_dir + cos_t * N;
+        indirect_dir.normalize();
+        Ray indirect_ray(P + 1e-6 * N, indirect_dir);
+        Vector indirect = getColor(indirect_ray, recursion_depth + 1);
+		indirect = Vector(
+    		objects[object_id]->albedo[0] * indirect[0],
+    		objects[object_id]->albedo[1] * indirect[1],
+    		objects[object_id]->albedo[2] * indirect[2]
+		);
+
+
+        return direct + indirect;
+    }
+
+    return Vector(0, 0, 0);
+}
+
+
+
+
+
 
 	std::vector<const Object*> objects;
 
@@ -279,26 +349,48 @@ int main() {
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 
+
+
 #pragma omp parallel for schedule(dynamic, 1)
 	for (int i = 0; i < H; i++) {
-		for (int j = 0; j < W; j++) {
-			Vector color;
+    	for (int j = 0; j < W; j++) {
+        	Vector color;
 
-			// TODO (lab 1) : correct ray_direction so that it goes through each pixel (j, i)			
-			Vector ray_direction(j-(W/2)+0.5, (H/2)-i-0.5, -W/(2*tan(scene.fov/2)));
-			ray_direction.normalize();
-			Ray ray(scene.camera_center, ray_direction);
+        	// TODO (lab 1) : correct ray_direction so that it goes through each pixel (j, i)			
+        	Vector ray_direction(j-(W/2)+0.5, (H/2)-i-0.5, -W/(2*tan(scene.fov/2)));
+        	ray_direction.normalize();
+        	Ray ray(scene.camera_center, ray_direction);
 
-			// TODO (lab 2) : add Monte Carlo / averaging of random ray contributions here
-			// TODO (lab 2) : add antialiasing by altering the ray_direction here
-			// TODO (lab 2) : add depth of field effect by altering the ray origin (and direction) here
+        
+        	const int SPP = 100; 
+        	color = Vector(0, 0, 0);
+        	int thread_id = omp_get_thread_num();
 
-			color  = scene.getColor(ray, 0);
+        // TODO (lab 2) : add Monte Carlo / averaging of random ray contributions here
+       
+        	for (int s = 0; s < SPP; s++) {
 
-			image[(i * W + j) * 3 + 0] = std::min(255., std::max(0., 255. * std::pow(color[0] / 255., 1. / scene.gamma)));
-			image[(i * W + j) * 3 + 1] = std::min(255., std::max(0., 255. * std::pow(color[1] / 255., 1. / scene.gamma)));
-			image[(i * W + j) * 3 + 2] = std::min(255., std::max(0., 255. * std::pow(color[2] / 255., 1. / scene.gamma)));
-		}
+            // TODO (lab 2) : add antialiasing by altering the ray_direction here
+            
+            	double u = uniform(engine[thread_id]);
+            	double v = uniform(engine[thread_id]);
+
+            	Vector ray_direction_aa(
+                	j - (W/2) + u,
+                	(H/2) - i - v,
+               	 -W/(2*tan(scene.fov/2))
+            	);
+            	ray_direction_aa.normalize();
+            	Ray ray_aa(scene.camera_center, ray_direction_aa);
+            
+            	color = color + scene.getColor(ray_aa, 0);
+        	}
+        	color = color / SPP;
+        
+        	image[(i * W + j) * 3 + 0] = std::min(255., std::max(0., 255. * std::pow(color[0] / 255., 1. / scene.gamma)));
+        	image[(i * W + j) * 3 + 1] = std::min(255., std::max(0., 255. * std::pow(color[1] / 255., 1. / scene.gamma)));
+        	image[(i * W + j) * 3 + 2] = std::min(255., std::max(0., 255. * std::pow(color[2] / 255., 1. / scene.gamma)));
+    	}
 	}
 	stbi_write_png("image.png", W, H, 3, &image[0], 0);
 

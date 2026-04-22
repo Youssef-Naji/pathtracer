@@ -7,6 +7,7 @@
 #include <string>
 #include <fstream>
 
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -271,14 +272,53 @@ public:
 
 	// TODO ray-mesh intersection (labs 3 and 4)
 	bool intersect(const Ray& ray, Vector& P, double& t, Vector& N) const {
-		
-		// lab 3 : for each triangle, compute the ray-triangle intersection with Moller-Trumbore algorithm
-		// lab 3 : once done, speed it up by first checking against the mesh bounding box
-		// lab 4 : recursively apply the bounding-box test from a BVH datastructure
+	// lab 3 : for each triangle, compute the ray-triangle intersection with Moller-Trumbore algorithm
+	// lab 3 : once done, speed it up by first checking against the mesh bounding box
+	// lab 4 : recursively apply the bounding-box test from a BVH datastructure
 
+	bool hit = false;
+	t = 1e9;
+	for (int idx = 0; idx < indices.size(); idx++) {
+		const TriangleIndices& tri = indices[idx];
+		const Vector& A = vertices[tri.vtx[0]];
+		const Vector& B = vertices[tri.vtx[1]];
+		const Vector& C = vertices[tri.vtx[2]];
+		Vector edge1 = B - A;
+		Vector edge2 = C - A;
+		Vector h = cross(ray.u, edge2);
+		double a = dot(edge1, h);
+		if (fabs(a) < 1e-8) continue; 
+		double f = 1.0 / a;
+		Vector s = ray.O - A;
+		double u = f * dot(s, h);
+		if (u < 0.0 || u > 1.0) continue;
+		Vector q = cross(s, edge1);
+		double v = f * dot(ray.u, q);
+		if (v < 0.0 || u + v > 1.0) continue;
+		double t_temp = f * dot(edge2, q);
 
-		return false;
+		if (t_temp > 1e-8 && t_temp < t) {
+			t = t_temp;
+			P = ray.O + ray.u * t;
+			N = cross(edge1, edge2);
+			N.normalize();
+
+			hit = true;
+		}
 	}
+
+	return hit;
+}
+
+// load cat
+// TriangleMesh cat(Vector(0.8, 0.8, 0.8));
+// cat.readOBJ("models/cat.obj");
+// cat.scale_translate(0.8, Vector(0, -10, 0));
+
+
+
+
+
 
 
 	std::vector<TriangleIndices> indices;
@@ -369,15 +409,7 @@ Vector getColor(const Ray& ray, int recursion_depth) {
 
 
 
-
-
-
-
         if (objects[object_id]->transparent) { // optional
-
-
-
-
 
 
 
@@ -478,6 +510,11 @@ int main() {
 	Sphere ceiling(Vector(0, 1000, 0), 940, Vector(0.3, 0.5, 0.3));
 	Sphere floor(Vector(0, -1000, 0), 990, Vector(0.6, 0.5, 0.7));
 
+	TriangleMesh cat(Vector(0.8, 0.8, 0.8));
+    cat.readOBJ("models/cat.obj");
+	cat.scale_translate(0.8, Vector(0, -10, 0));
+
+
 	Scene scene;
 	scene.camera_center = Vector(0, 0, 55);
 	scene.light_position = Vector(-10,20,40);
@@ -487,6 +524,7 @@ int main() {
 	scene.max_light_bounce = 5;
 
 	scene.addObject(&center_sphere);
+	scene.addObject(&cat);
 
 	
 	scene.addObject(&wall_left);

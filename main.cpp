@@ -644,7 +644,7 @@ int main() {
 	scene.light_intensity = 3E7;
 	scene.fov = 60 * M_PI / 180.0;
 	scene.gamma = 2.2;
-	scene.max_light_bounce = 5;
+	scene.max_light_bounce = 20;
 
 	// Keep this commented if you want to see only the cat.
 	// scene.addObject(&center_sphere);

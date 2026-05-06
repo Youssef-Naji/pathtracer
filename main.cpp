@@ -6,6 +6,10 @@
 #include <map>
 #include <string>
 #include <fstream>
+#include <algorithm>
+#include <iostream>
+
+
 
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -155,7 +159,10 @@ public:
 	// read an .obj file
 	void readOBJ(const char* obj) {
 		std::ifstream f(obj);
-		if (!f) return;
+		if (!f) {
+			std::cerr << "ERROR: cannot open OBJ file: " << obj << std::endl;
+			return;
+		}
 
 		std::map<std::string, int> mtls;
 		int curGroup = -1, maxGroup = -1;
@@ -275,7 +282,6 @@ public:
 	// lab 3 : for each triangle, compute the ray-triangle intersection with Moller-Trumbore algorithm
 	// lab 3 : once done, speed it up by first checking against the mesh bounding box
 	// lab 4 : recursively apply the bounding-box test from a BVH datastructure
-
 	bool hit = false;
 	t = 1e9;
 	for (int idx = 0; idx < indices.size(); idx++) {
@@ -296,24 +302,16 @@ public:
 		double v = f * dot(ray.u, q);
 		if (v < 0.0 || u + v > 1.0) continue;
 		double t_temp = f * dot(edge2, q);
-
 		if (t_temp > 1e-8 && t_temp < t) {
 			t = t_temp;
 			P = ray.O + ray.u * t;
 			N = cross(edge1, edge2);
 			N.normalize();
-
 			hit = true;
 		}
 	}
-
 	return hit;
 }
-
-// load cat
-// TriangleMesh cat(Vector(0.8, 0.8, 0.8));
-// cat.readOBJ("models/cat.obj");
-// cat.scale_translate(0.8, Vector(0, -10, 0));
 
 
 
@@ -370,16 +368,7 @@ Vector getColor(const Ray& ray, int recursion_depth) {
 
 
 
-
-
-
-
-
     if (recursion_depth >= max_light_bounce) return Vector(0, 0, 0);
-
-
-
-
 
 
 
@@ -392,17 +381,7 @@ Vector getColor(const Ray& ray, int recursion_depth) {
     if (intersect(ray, P, t, N, object_id)) {
 
 
-
-
-
-
-
-
         if (objects[object_id]->mirror) {
-
-
-
-
 
              // return getColor in the reflected direction, with recursion_depth+1 (recursively)
         } // else
@@ -492,8 +471,16 @@ Vector getColor(const Ray& ray, int recursion_depth) {
 
 
 int main() {
-	int W = 512;
-	int H = 512;
+	TriangleMesh cat(Vector(0.8, 0.8, 0.8));
+	cat.readOBJ("Models_F0202A090/cat.obj");
+	std::cerr << "cat vertices = " << cat.vertices.size() << std::endl;
+	std::cerr << "cat triangles = " << cat.indices.size() << std::endl;
+	cat.scale_translate(0.8, Vector(0, -10, -35));
+	std::cerr << "START MAIN" << std::endl;
+	
+	int W = 1000;
+	int H = 1000;
+
 
 	for (int i = 0; i<32; i++) {
 		engine[i].seed(i);
@@ -510,9 +497,7 @@ int main() {
 	Sphere ceiling(Vector(0, 1000, 0), 940, Vector(0.3, 0.5, 0.3));
 	Sphere floor(Vector(0, -1000, 0), 990, Vector(0.6, 0.5, 0.7));
 
-	TriangleMesh cat(Vector(0.8, 0.8, 0.8));
-    cat.readOBJ("models/cat.obj");
-	cat.scale_translate(0.8, Vector(0, -10, 0));
+	
 
 
 	Scene scene;
@@ -523,7 +508,7 @@ int main() {
 	scene.gamma = 2.2;    // TODO (lab 1) : play with gamma ; typically, gamma = 2.2
 	scene.max_light_bounce = 5;
 
-	scene.addObject(&center_sphere);
+	//scene.addObject(&center_sphere);
 	scene.addObject(&cat);
 
 	
@@ -550,7 +535,7 @@ int main() {
         	Ray ray(scene.camera_center, ray_direction);
 
         
-        	const int SPP = 100; 
+        	const int SPP = 16; 
         	color = Vector(0, 0, 0);
         	int thread_id = omp_get_thread_num();
 
@@ -560,8 +545,8 @@ int main() {
 
             // TODO (lab 2) : add antialiasing by altering the ray_direction here
             
-            	double u = uniform(engine[thread_id]);
-            	double v = uniform(engine[thread_id]);
+            	double u = 0.5;
+            	double v = 0.5;
 
             	Vector ray_direction_aa(
                 	j - (W/2) + u,
@@ -583,4 +568,6 @@ int main() {
 	stbi_write_png("image.png", W, H, 3, &image[0], 0);
 
 	return 0;
-}
+} 
+
+
